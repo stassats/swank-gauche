@@ -60,6 +60,17 @@
      (describe (eval-in-module (read-from-string symbol-name)
                                *module*)))))
 
+
+(define (list-all-package-names . nicknames)
+  (map module-name (all-modules)))
+
+(define (set-package name)
+  (let ((module (find-module (read-from-string name))))
+    (unless module
+      (error "package" name "doesn't exist"))
+    (list (symbol->string (module-name module))
+          (symbol->string (module-name module)))))
+
 (define (get-procedure form)
   (match form
     (("with-module" (? string? module) (? string? symbol) . _)
