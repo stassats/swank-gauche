@@ -31,7 +31,11 @@
    (event-queue :init-value (make-queue)
                 :accessor event-queue)))
 
+(define nil #f)
+(define t #t)
+
 (define *connection* #f)
+(define *module* (current-module))
 
 (define (make-connection socket)
   (make <swank-connection>
@@ -53,8 +57,8 @@
 (define (describe-symbol symbol-name)
   (with-output-to-string
    (lambda ()
-     (describe (eval (read-from-string symbol-name)
-                     (interaction-environment))))))
+     (describe (eval-in-module (read-from-string symbol-name)
+                               *module*)))))
 
 (define (get-procedure form)
   (match form
@@ -63,7 +67,7 @@
        (when module
          (global-variable-ref module (string->symbol symbol) #f))))
     (((? string? symbol) . _)
-     (global-variable-ref (current-module) (string->symbol symbol) #f))
+     (global-variable-ref *module* (string->symbol symbol) #f))
     (_ #f)))
 
 (define (procedure-name procedure)
@@ -118,10 +122,11 @@
   (let ((symbol (read-from-string symbol)))
     (when (symbol-bound? symbol)
       (write-to-string
-       (eval symbol (interaction-environment))))))
+       (eval-in-module symbol *module*)))))
 
 (define (eval-form-for-emacs form)
-  (call-with-values (lambda () (eval form (interaction-environment)))
+  (call-with-values (lambda ()
+                      (eval-in-module form *module*))
     list))
 
 (define (interactive-eval form)
@@ -142,7 +147,7 @@
   'nil)
 
 (define (changelog-date)
-  "2010-01-28")
+  "2010-02-01")
 
 (define (connection-info)
   (list :pid (sys-getpid)
@@ -247,17 +252,26 @@
 (define (find-package package-name)
   (let* ((name (cond ((or (string-ci=? package-name "common-lisp-user")
                           (string-ci=? package-name "cl-user"))
-                      "user")
+                      'user)
                      ((or (string-ci=? package-name "common-lisp")
-                          (string-ci=? package-name "cl")))
-                     (else package-name)))
-         (module (find-module (read-from-string name))))
+                          (string-ci=? package-name "cl"))
+                      'scheme)
+                     (else (read-from-string package-name))))
+         (module (find-module name)))
     (or module (find-module 'user))))
 
-(define (eval-in-package form package)
-  (eval `(with-module ,(module-name (find-package package))
-                      ,(transform-package form))
+(define (eval-in-module form module)
+  (eval `(with-module ,(module-name module)
+                      ,form)
         (interaction-environment)))
+
+(define (eval-in-package form package)
+  (let ((old-module *module*))
+   (unwind-protect
+    (begin
+      (set! *module* (find-package package))
+      (eval-in-module (transform-package form) *module*))
+    (set! *module* old-module))))
 
 (define (eval-for-emacs connection form package thread id)
   (set! sigint? #f)
@@ -313,7 +327,6 @@
              (swank-output connection))))
 
 (define (setup-environment socket)
-  (install-signal-handler)
   (set! *connection* (make-connection socket))
   (set! (port-buffering (swank-out-port *connection*)) :line))
 
@@ -334,7 +347,8 @@
     (selector-add! selector (socket-fd server)
                    accept-handler '(r))
     (unwind-protect (selector-select selector)
-                    (socket-close server))))
+                    (begin (socket-close server)
+                           (uninstall-signal-handler)))))
 
 ;;; slime-c-p-c completion
 
