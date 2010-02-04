@@ -1,21 +1,19 @@
 ;;; -*- Mode: Scheme -*-
 
-;; (define-module swank
-  
-
-;;   (export start-server))
-(use gauche.net)
-(use gauche.selector)
-(use gauche.vport)
-(use gauche.uvector)
-(use srfi-1)
-(use util.match)
-(use util.queue)
-
-;;(select-module swank)
-
 (define nil #f)
 (define t #t)
+
+(define-module swank
+  (export start-server)
+  (use gauche.net)
+  (use gauche.selector)
+  (use gauche.vport)
+  (use gauche.uvector)
+  (use srfi-1)
+  (use util.match)
+  (use util.queue))
+
+(select-module swank)
 
 (define-class <swank-connection> ()
   ((socket :init-keyword :socket
@@ -49,10 +47,10 @@
 
 ;;;
 
-(define (swank:swank-require . rest))
-(define (swank:buffer-first-change filename))
+(define (swank-require . rest))
+(define (buffer-first-change filename))
 
-(define (swank:describe-symbol symbol-name)
+(define (describe-symbol symbol-name)
   (with-output-to-string
    (lambda ()
      (describe (eval (read-from-string symbol-name)
@@ -103,7 +101,7 @@
         (else (or (find-subform-for-arglist (car form))
                   (find-subform-for-arglist (cdr form))))))
 
-(define (swank:autodoc forms . rest)
+(define (autodoc forms . rest)
   (procedure-arglist (find-subform-for-arglist forms)))
 
 (define (send-results values)
@@ -116,7 +114,7 @@
 
                             *connection*))))
 
-(define (swank:variable-desc-for-echo-area symbol)
+(define (variable-desc-for-echo-area symbol)
   (let ((symbol (read-from-string symbol)))
     (when (symbol-bound? symbol)
       (write-to-string
@@ -126,7 +124,7 @@
   (call-with-values (lambda () (eval form (interaction-environment)))
     list))
 
-(define (swank:interactive-eval form)
+(define (interactive-eval form)
   (let ((values (eval-form-for-emacs (read-from-string form))))
     (if (null? values)
         "; No value"
@@ -138,7 +136,7 @@
                   (display x))
                 values))))))
 
-(define (swank:listener-eval form)
+(define (listener-eval form)
   (send-results
    (eval-form-for-emacs (read-from-string form)))
   'nil)
@@ -146,7 +144,7 @@
 (define (changelog-date)
   "2010-01-28")
 
-(define (swank:connection-info)
+(define (connection-info)
   (list :pid (sys-getpid)
         :lisp-implementation (list
                               :type "Gauche Scheme"
@@ -159,17 +157,17 @@
         :package (symbol->string (module-name (current-module)))
         :version (changelog-date)))
 
-(define (swank:create-repl env)
+(define (create-repl env)
   (list "user" "user"))
 
-(define (swank:quit-lisp)
+(define (quit-lisp)
   (uninstall-signal-handler)
   (socket-close (swank-socket *connection*)))
 
-(define (swank:swank-macroexpand-1 form)
+(define (swank-macroexpand-1 form)
   (write-to-string (macroexpand-1 (read-from-string form))))
 
-(define (swank:load-file file)
+(define (load-file file)
   (load file))
 
 ;;;;
@@ -232,14 +230,43 @@
 (define (uninstall-signal-handler)
   (set-signal-handler! SIGINT %default-signal-handler))
 
+(define (de-clfy-symbol symbol)
+  (rxmatch-if (rxmatch #/^(.+?):{1,2}(.+)$/ (symbol->string symbol))
+              (_ module name)
+              `(with-module ,(string->symbol module)
+                            ,(string->symbol name))
+              symbol))
+
+(define (transform-package form)
+  (if (and (pair? form)
+           (symbol? (car form)))
+      (cons (de-clfy-symbol (car form))
+            (cdr form))
+      form))
+
+(define (find-package package-name)
+  (let* ((name (cond ((or (string-ci=? package-name "common-lisp-user")
+                          (string-ci=? package-name "cl-user"))
+                      "user")
+                     ((or (string-ci=? package-name "common-lisp")
+                          (string-ci=? package-name "cl")))
+                     (else package-name)))
+         (module (find-module (read-from-string name))))
+    (or module (find-module 'user))))
+
+(define (eval-in-package form package)
+  (eval `(with-module ,(module-name (find-package package))
+                      ,(transform-package form))
+        (interaction-environment)))
+
 (define (eval-for-emacs connection form package thread id)
   (set! sigint? #f)
   (unwind-protect
    (write-packet
     (list :return
           (guard (exc
-                  ((<error> exc)
-                   (format #t "ERROR: ~a~%" (slot-ref exc 'message))
+                  ((<message-condition> exc)
+                   (format #t "EXCEPTION: ~a~%" (slot-ref exc 'message))
                    '(:abort))
                   (else
                    (format #t "EXCEPTION: ~a~%" exc)
@@ -249,7 +276,7 @@
                  (begin0
                      (if sigint?
                          '(:abort)
-                         `(:ok ,(emacsify (eval form (interaction-environment)))))
+                         `(:ok ,(emacsify (eval-in-package form package))))
                    (set! eval-continuation #f)))
           id)
     connection)
@@ -311,8 +338,10 @@
 
 ;;; slime-c-p-c completion
 
-(define (swank:completions string package)
-  (let* ((names (map symbol->string (list-all-symbols)))
+(define (completions string package)
+  (let* ((names (map symbol->string
+                     (list-all-symbols
+                      (find-package package))))
          (completions (filter (make-completion-regex string) names)))
     completions
     (list completions (if (null? completions)
@@ -326,12 +355,12 @@
 (define (list-symbols module)
   (hash-table-keys (module-table module)))
 
-(define (list-all-symbols)
+(define (list-all-symbols module)
   (apply append!
          (delete-duplicates!
           (map list-symbols
-               (append (module-precedence-list (current-module))
-                       (module-imports (current-module)))))))
+               (append (module-precedence-list module)
+                       (module-imports module))))))
 
 (define (common-prefix strings)
   (define (nth-char? n char string)
