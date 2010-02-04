@@ -58,7 +58,7 @@
 
 (define (get-procedure form)
   (match form
-    (("with-module" module symbol . _)
+    (("with-module" (? string? module) (? string? symbol) . _)
      (let ((module (find-module (string->symbol module))))
        (when module
          (global-variable-ref module (string->symbol symbol) #f))))
