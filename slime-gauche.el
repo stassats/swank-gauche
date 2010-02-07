@@ -1,5 +1,3 @@
-slime-find-buffer-package-function
-
 (defun slime-gosh-buffer-package ()
   (let ((case-fold-search t)
         (regexp "^[ \t]*(select-module[ \n\t]+\\_<\\(.+?\\)\\_>)"))
@@ -18,3 +16,11 @@ slime-find-buffer-package-function
             (setq slime-complete-symbol-function 'slime-complete-symbol*)
             (make-local-variable 'slime-find-buffer-package-function)
             (setq slime-find-buffer-package-function 'slime-gosh-package)))
+
+(defun gosh ()
+  (interactive)
+  (slime-start :program "/usr/bin/gosh"
+               :program-args (list (expand-file-name
+                                    "contrib/swank-gauche.scm" slime-path)
+                                   (slime-swank-port-file))
+               :init (lambda (&rest args) "")))

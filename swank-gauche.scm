@@ -1,10 +1,15 @@
 ;;; -*- Mode: Scheme -*-
+;;;
+;;; Authors: Stas Boukarev <stassats@gmail.com>
+;;;
+;;; License: Public Domain
 
 (define nil #f)
 (define t #t)
 
 (define-module swank
   (export start-server)
+  (use gauche.interactive)
   (use gauche.net)
   (use gauche.selector)
   (use gauche.vport)
@@ -12,6 +17,16 @@
   (use srfi-1)
   (use util.match)
   (use util.queue))
+
+(define (main args)
+  (define (parse-integer string)
+    (or (string->number string)
+        string))
+  (if (= (length args) 2)
+      ((with-module swank start-server)
+       (parse-integer (cadr args)))
+      (print "The only argument should be either a port number,
+ or a file name to which randomly assigned port number will be written.")))
 
 (select-module swank)
 
@@ -59,7 +74,6 @@
    (lambda ()
      (describe (eval-in-module (read-from-string symbol-name)
                                *module*)))))
-
 
 (define (list-all-package-names . nicknames)
   (map module-name (all-modules)))
@@ -158,7 +172,7 @@
   'nil)
 
 (define (changelog-date)
-  "2010-02-01")
+  "2010-02-07")
 
 (define (connection-info)
   (list :pid (sys-getpid)
@@ -341,20 +355,31 @@
   (set! *connection* (make-connection socket))
   (set! (port-buffering (swank-out-port *connection*)) :line))
 
-(define (start-server port)
-  (let ((server (make-server-socket port :reuse-addr? #t))
-        (selector (make <selector>)))
 
+
+(define (write-port-number-to-file file-name socket)
+  (with-output-to-file file-name
+    (lambda ()
+      (display (sockaddr-port (socket-getsockname socket))))))
+
+(define (start-server port)
+  "Port should be either an integer or a file name
+to which a randomly assigned port numbe will be written"
+  (let* ((file (if (string? port) port #f))
+         (port (if file 0 port))
+         (server (make-server-socket port :reuse-addr? #t))
+         (selector (make <selector>)))
     (define (accept-handler sock flag)
       (setup-environment (socket-accept server))
       (with-input-from-port (swank-in-port *connection*)
         (lambda ()
-         (with-error-to-port (swank-out-port *connection*)
-           (lambda ()
-             (with-output-to-port (swank-out-port *connection*)
-               (lambda ()
-                 (handle-requests *connection*))))))))
-
+          (with-error-to-port (swank-out-port *connection*)
+                              (lambda ()
+                                (with-output-to-port (swank-out-port *connection*)
+                                  (lambda ()
+                                    (handle-requests *connection*))))))))
+    (when file
+      (write-port-number-to-file file server))
     (selector-add! selector (socket-fd server)
                    accept-handler '(r))
     (unwind-protect (selector-select selector)
