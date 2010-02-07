@@ -24,3 +24,5 @@
                                     "contrib/swank-gauche.scm" slime-path)
                                    (slime-swank-port-file))
                :init (lambda (&rest args) "")))
+
+(provide 'slime-gauche)

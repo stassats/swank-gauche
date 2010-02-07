@@ -107,7 +107,10 @@
            (let* ((arity (arity procedure))
                   (at-least (cond ((arity-at-least? arity)
                                    (arity-at-least-value arity))
-                                  ((pair? arity) (car arity))
+                                  ((pair? arity)
+                                   (if (number? (car arity))
+                                       (car arity)
+                                       (arity-at-least-value (car arity))))
                                   (else arity))))
              (format #f "~a"
                      (append (list (procedure-name procedure))
@@ -362,12 +365,15 @@
     (lambda ()
       (display (sockaddr-port (socket-getsockname socket))))))
 
+(define listen-address "127.0.0.1")
+
 (define (start-server port)
   "Port should be either an integer or a file name
 to which a randomly assigned port numbe will be written"
   (let* ((file (if (string? port) port #f))
          (port (if file 0 port))
-         (server (make-server-socket port :reuse-addr? #t))
+         (server (make-server-socket (make <sockaddr-in> listen-address port)
+                                     :reuse-addr? #t))
          (selector (make <selector>)))
     (define (accept-handler sock flag)
       (setup-environment (socket-accept server))
