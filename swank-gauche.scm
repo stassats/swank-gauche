@@ -14,6 +14,7 @@
   (use gauche.selector)
   (use gauche.vport)
   (use gauche.uvector)
+  (use file.util)
   (use srfi-1)
   (use util.match)
   (use util.queue))
@@ -84,6 +85,12 @@
       (error "package" name "doesn't exist"))
     (list (symbol->string (module-name module))
           (symbol->string (module-name module)))))
+
+(define default-directory current-directory)
+
+(define (set-default-directory directory)
+  (current-directory directory)
+  (current-directory))
 
 (define (get-procedure form)
   (match form
