@@ -310,6 +310,7 @@
 
 (define (eval-for-emacs connection form package thread id)
   (set! sigint? #f)
+  (install-signal-handler)
   (unwind-protect
    (write-packet
     (list :return
@@ -342,16 +343,25 @@
       (process-event (dequeue! (event-queue connection)) connection))
     (let ((event (read-from-string (read-packet connection))))
       (process-event event connection)
-      ;; (write request (standard-output-port)) (newline (standard-output-port))
+      ;; (write event (standard-output-port)) (newline (standard-output-port))
       
       )))
+
+(define (read-n-chars n iport)
+  (let ((string (make-string n))
+        (index 0 ))
+    (while (positive? n)
+      (string-set! string index (read-char iport))
+      (inc! index)
+      (dec! n))
+    string))
 
 (define (read-length input)
   (string->number (read-block 6 input) 16))
 
 (define (read-packet connection)
   (let ((input (swank-input connection)))
-    (read-block (read-length input) input)))
+    (read-n-chars (read-length input) input)))
 
 (define (encode-length string)
   (format #f "~6,'0x" (string-length string)))
@@ -364,8 +374,6 @@
 (define (setup-environment socket)
   (set! *connection* (make-connection socket))
   (set! (port-buffering (swank-out-port *connection*)) :line))
-
-
 
 (define (write-port-number-to-file file-name socket)
   (with-output-to-file file-name
